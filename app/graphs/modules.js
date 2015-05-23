@@ -3,6 +3,7 @@ var sigma = require("sigma.js");
 var findById = require("../findById");
 var percentageToColor = require("../percentageToColor").greenRed;
 var percentageToColor2 = require("../percentageToColor").blue;
+var tarjan = require("./tarjan");
 
 var element = document.getElementById("sigma-modules");
 
@@ -78,13 +79,49 @@ app.stats.modules.forEach(function(module, idx) {
 		});
 	});
 });
+
+var vertices = [];
+nodes.forEach(function (node) {
+	vertices.push(new tarjan.Vertex(node.uid))
+});
+edges.forEach(function(edge) {
+	var sourceVertex = vertices[edge.sourceModuleUid];
+	var targetVertex = vertices[edge.targetModuleUid];
+	if (!sourceVertex) {
+		throw new Error("sourceVertex error");
+	}
+	if (!targetVertex) {
+		throw new Error("targetVertex error");
+	}
+	sourceVertex.connections.push(targetVertex);
+});
+var tarjanGraph = new tarjan.Graph(vertices);
+var tarjan = new tarjan.Tarjan(tarjanGraph);
+var scc = tarjan.run();
+var cycles = [];
+var cycleIndex = 0;
+
+scc.forEach(function(component) {
+	if (component.length > 1) {
+	  var cycle = {
+	    index: cycleIndex,
+	    modules: []
+	  };
+	  component.forEach(function(vertex, moduleIndex) {
+	    cycle.modules.push(app.stats.modules[vertex.name]);
+	  });
+	  cycles.push(cycle);
+	  cycleIndex++;
+	}
+});
+
 var s = new sigma({
 	graph: {
 		nodes: nodes,
 		edges: edges
 	},
 	renderer: {
-		type: "canvas",
+		type: "webgl",
 		container: element
 	},
 	settings: {
@@ -106,6 +143,8 @@ s.bind("clickNode", function(e) {
 });
 
 s.refresh();
+
+exports.cycles = cycles;
 
 exports.show = function() {
 	element.style.display = "block";
@@ -176,6 +215,26 @@ exports.setActiveChunk = function(activeChunk) {
 		else if(sc)
 			e.color = "#00aa00";
 		else if(tc)
+			e.color = "#ff0000";
+		else
+			e.color = "#aaaaaa";
+	});
+	s.refresh();
+};
+
+exports.setActiveCycles = function(activeCycles) {
+	var colors = {};
+	activeCycles.forEach(function(cycle) {
+		cycle.modules.forEach(function(module) {
+			colors[module.id] = "#ff0000";
+		});
+	})
+	s.graph.nodes().forEach(function(module) {
+		module.color = colors[module.moduleId] || "#aaaaaa";
+	});
+	s.graph.edges().forEach(function(e) {
+		if(colors[e.targetModuleUid]
+			&& colors[e.sourceModuleUid])
 			e.color = "#ff0000";
 		else
 			e.color = "#aaaaaa";
